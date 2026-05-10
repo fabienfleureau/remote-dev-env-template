@@ -48,6 +48,12 @@ RUN npm install -g opencode-ai
 RUN curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh | sh \
     && ln -sf /root/.local/bin/rtk /usr/local/bin/rtk
 
+# Patch: disable navigator polyfill that crashes Claude Code extension on Node 22
+# The extension host throws PendingMigrationError when extensions access `navigator`.
+# This replaces the conditional check with `true` so the polyfill is never installed.
+RUN sed -i 's/Xy.supportGlobalNavigator||/true||/' \
+    /usr/lib/code-server/lib/vscode/out/vs/workbench/api/node/extensionHostProcess.js
+
 # Configure code-server to use Microsoft VS Code Marketplace
 # (required for Claude Code extension, GitHub Copilot, Live Preview, etc.)
 # To revert to Open VSX, remove this ENV line.
@@ -111,8 +117,7 @@ RUN mkdir -p /home/coder/.local/share/code-server/User \
   "remote.autoForwardPorts": true,
   "remote.autoForwardPortsSource": "process",
   "claudeCode.preferredLocation": "sidebar",
-  "claudeCode.hideOnboarding": true,
-  "extensions.supportNodeGlobalNavigator": true
+  "claudeCode.hideOnboarding": true
 }
 SETTINGS
 
