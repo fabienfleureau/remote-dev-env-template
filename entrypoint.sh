@@ -70,6 +70,76 @@ if [[ -n "${GIT_REPO_URL:-}" ]]; then
   fi
 fi
 
+# ── Generate WELCOME.md for new builders ─────────────────────────────────────
+generate_welcome_md() {
+  if [[ ! -f "$PROJECT_DIR/WELCOME.md" ]]; then
+    cat > "$PROJECT_DIR/WELCOME.md" << 'WELCOME'
+# Welcome to Your Builder Workspace
+
+You're all set to start building! This workspace comes with **Claude Code**, an AI assistant that can write code, create apps, and help you bring ideas to life.
+
+---
+
+## Step 1: Start a conversation with Claude
+
+Look at the **Claude Code panel on the right side** of your screen. You'll see a text box that says _"Describe what to build"_.
+
+Just type what you want and press Enter. Here are some ideas to try:
+
+> Build me a personal portfolio website with a hero section, an about me page, and a contact form. Use a modern dark theme.
+
+> Create a simple todo app where I can add, complete, and delete tasks. Make it look clean and minimal.
+
+> Build a weather dashboard that shows the current weather for any city. Use a free weather API.
+
+---
+
+## Step 2: Preview your app
+
+Once Claude starts building, it will create files and may start a development server. When it does:
+
+1. A **preview panel** will appear showing your app
+2. If it doesn't appear automatically, open the terminal (`` Ctrl+` ``) and look for the URL (usually `http://localhost:3000` or similar)
+3. You can also use the **Live Preview** extension — click the "Go Live" button in the bottom status bar
+
+---
+
+## Step 3: Iterate and improve
+
+The best way to vibe code is to **iterate**. After Claude builds something:
+
+- Tell it what you like and what to change
+- Ask it to add new features
+- Be specific: _"Make the header blue"_ works better than _"Make it look better"_
+
+---
+
+## Tips for effective vibe coding
+
+- **Be specific**: _"Add a signup form with email, password, and a submit button"_ beats _"Add a form"_
+- **Iterate in small steps**: Ask for one feature at a time rather than everything at once
+- **Ask Claude to explain**: If you're curious how something works, just ask!
+- **Don't worry about mistakes**: Claude can fix errors — just paste the error message and ask for help
+
+---
+
+## Authentication
+
+If Claude asks you to log in or you see an authentication prompt:
+
+- **With an API key**: Your admin should have set the `ANTHROPIC_API_KEY` environment variable. If not, ask them to configure it.
+- **With a login**: Click the login link and sign in with your Anthropic account.
+
+---
+
+Happy building!
+WELCOME
+    echo "Generated WELCOME.md"
+  fi
+}
+
+generate_welcome_md
+
 # ── Auto-generate .vscode/tasks.json for dev server auto-start ───────────────
 generate_tasks_json() {
   local run_cmd=""
