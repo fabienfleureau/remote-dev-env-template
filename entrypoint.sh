@@ -9,9 +9,11 @@
 #   GIT_BRANCH      — Branch to checkout (default: main)
 #   GIT_USER_NAME   — Git author name for commits
 #   GIT_USER_EMAIL  — Git author email for commits
+#   DEV_PORT        — Port for the auto-started dev server (default: 3100)
 set -e
 
 PROJECT_DIR="/home/coder/project"
+DEV_PORT="${DEV_PORT:-3100}"
 
 # ── Clear stale workspace state to prevent webview deserialization crashes ────
 rm -rf /home/coder/.local/share/code-server/User/workspaceStorage/*/state.vscdb 2>/dev/null
@@ -70,6 +72,26 @@ if [[ -n "${GIT_REPO_URL:-}" ]]; then
   if [[ -f "$PROJECT_DIR/requirements.txt" ]]; then
     echo "Installing Python dependencies..."
     cd "$PROJECT_DIR" && pip install --user -r requirements.txt 2>&1 || echo "WARNING: pip install failed (non-critical)."
+  fi
+
+  # Ensure uvicorn is available for FastAPI projects
+  if [[ -f "$PROJECT_DIR/main.py" ]] && grep -qiE 'from fastapi|import fastapi' "$PROJECT_DIR/main.py" 2>/dev/null; then
+    if ! command -v uvicorn &>/dev/null; then
+      echo "Installing uvicorn for FastAPI..."
+      pip install --user uvicorn 2>&1 || echo "WARNING: uvicorn install failed (non-critical)."
+    fi
+  fi
+
+  # Ruby/Rails dependencies
+  if [[ -f "$PROJECT_DIR/Gemfile" ]]; then
+    echo "Installing Ruby dependencies..."
+    cd "$PROJECT_DIR" && bundle install 2>&1 || echo "WARNING: bundle install failed (non-critical)."
+  fi
+
+  # Go modules
+  if [[ -f "$PROJECT_DIR/go.mod" ]]; then
+    echo "Downloading Go modules..."
+    cd "$PROJECT_DIR" && go mod download 2>&1 || echo "WARNING: go mod download failed (non-critical)."
   fi
 fi
 
@@ -285,7 +307,10 @@ WELCOME
   fi
 }
 
-generate_welcome_md
+# WELCOME.md is only useful for fresh workspaces (no existing project)
+if [[ -z "${GIT_REPO_URL:-}" ]]; then
+  generate_welcome_md
+fi
 
 # ── Generate CLAUDE.md for Claude Code (sidebar + terminal) ──────────────────
 generate_claude_md() {
@@ -313,12 +338,112 @@ generate_opencode_skill() {
 
 generate_opencode_skill
 
+# ── Auto-detect app type and start dev server with hot-reload ─────────────────
+detect_and_start_devserver() {
+  if [[ -z "${GIT_REPO_URL:-}" ]]; then
+    return
+  fi
+
+  local dev_cmd=""
+  local app_type=""
+
+  cd "$PROJECT_DIR"
+
+  # ── Priority-ordered framework detection ──
+  # Specific framework configs take priority over generic package.json scripts,
+  # because we can pass explicit --host and --port flags to them.
+
+  # 1. Vite (React, Vue, Svelte, etc.)
+  if compgen -G "vite.config.*" >/dev/null 2>&1; then
+    app_type="Vite"
+    dev_cmd="npx vite --host 0.0.0.0 --port $DEV_PORT"
+
+  # 2. Next.js
+  elif compgen -G "next.config.*" >/dev/null 2>&1; then
+    app_type="Next.js"
+    dev_cmd="npx next dev --hostname 0.0.0.0 --port $DEV_PORT"
+
+  # 3. Nuxt
+  elif compgen -G "nuxt.config.*" >/dev/null 2>&1; then
+    app_type="Nuxt"
+    dev_cmd="npx nuxt dev --host 0.0.0.0 --port $DEV_PORT"
+
+  # 4. Node.js — generic package.json scripts (dev > start > serve)
+  elif [[ -f package.json ]]; then
+    if jq -e '.scripts.dev' package.json >/dev/null 2>&1; then
+      app_type="Node.js (npm run dev)"
+      dev_cmd="npm run dev"
+    elif jq -e '.scripts.start' package.json >/dev/null 2>&1; then
+      app_type="Node.js (npm start)"
+      dev_cmd="npm start"
+    elif jq -e '.scripts.serve' package.json >/dev/null 2>&1; then
+      app_type="Node.js (npm run serve)"
+      dev_cmd="npm run serve"
+    fi
+
+  # 5. Django
+  elif [[ -f manage.py ]]; then
+    app_type="Django"
+    dev_cmd="python3 manage.py runserver 0.0.0.0:$DEV_PORT"
+
+  # 6. Flask
+  elif [[ -f app.py ]] && grep -qiE 'from flask|import flask' app.py 2>/dev/null; then
+    app_type="Flask"
+    dev_cmd="flask run --host 0.0.0.0 --port $DEV_PORT --reload"
+
+  elif [[ -f wsgi.py ]] && grep -qiE 'from flask|import flask' wsgi.py 2>/dev/null; then
+    app_type="Flask"
+    dev_cmd="FLASK_APP=wsgi.py flask run --host 0.0.0.0 --port $DEV_PORT --reload"
+
+  # 7. FastAPI
+  elif [[ -f main.py ]] && grep -qiE 'from fastapi|import fastapi' main.py 2>/dev/null; then
+    app_type="FastAPI"
+    dev_cmd="uvicorn main:app --host 0.0.0.0 --port $DEV_PORT --reload"
+
+  # 8. Ruby on Rails
+  elif [[ -f Gemfile ]] && grep -q 'rails' Gemfile 2>/dev/null; then
+    app_type="Ruby on Rails"
+    dev_cmd="bundle exec rails server -b 0.0.0.0 -p $DEV_PORT"
+
+  # 9. Go
+  elif [[ -f go.mod ]]; then
+    app_type="Go"
+    dev_cmd="go run ."
+
+  # 10. Static HTML (fallback — serve with npx serve)
+  elif [[ -f index.html ]]; then
+    app_type="Static HTML"
+    dev_cmd="npx serve -l $DEV_PORT"
+  fi
+
+  if [[ -z "$dev_cmd" ]]; then
+    echo "No dev server detected — skipping auto-start."
+    return
+  fi
+
+  echo "Detected $app_type project. Starting dev server on port $DEV_PORT..."
+  echo "Command: $dev_cmd"
+
+  # Set common port env vars that many frameworks respect (for npm script cases)
+  export PORT="$DEV_PORT"
+
+  # Start dev server in background with output logged to file
+  cd "$PROJECT_DIR"
+  nohup bash -c "$dev_cmd" > /tmp/devserver.log 2>&1 &
+  local pid=$!
+  echo "$pid" > /tmp/devserver.pid
+  echo "Dev server started (PID: $pid, log: /tmp/devserver.log)"
+}
+
+detect_and_start_devserver
+
 # ── Auto-generate .vscode/tasks.json for dev server auto-start ───────────────
+# Only used for fresh workspaces (no GIT_REPO_URL) — cloned repos use the
+# background dev server started above instead.
 generate_tasks_json() {
   local run_cmd=""
 
   if [[ -f "$PROJECT_DIR/package.json" ]]; then
-    # Detect the best run command from package.json scripts
     if jq -e '.scripts.dev' "$PROJECT_DIR/package.json" >/dev/null 2>&1; then
       run_cmd="npm run dev"
     elif jq -e '.scripts.start' "$PROJECT_DIR/package.json" >/dev/null 2>&1; then
@@ -330,11 +455,10 @@ generate_tasks_json() {
     fi
   elif [[ -f "$PROJECT_DIR/requirements.txt" ]] || [[ -f "$PROJECT_DIR/manage.py" ]]; then
     if [[ -f "$PROJECT_DIR/manage.py" ]]; then
-      run_cmd="python3 manage.py runserver 0.0.0.0:3100"
+      run_cmd="python3 manage.py runserver 0.0.0.0:$DEV_PORT"
     fi
   fi
 
-  # Only generate tasks.json if we detected a run command and none exists yet
   if [[ -n "$run_cmd" && ! -f "$PROJECT_DIR/.vscode/tasks.json" ]]; then
     mkdir -p "$PROJECT_DIR/.vscode"
     cat > "$PROJECT_DIR/.vscode/tasks.json" << TASKS
@@ -361,7 +485,45 @@ TASKS
   fi
 }
 
-generate_tasks_json
+if [[ -z "${GIT_REPO_URL:-}" ]]; then
+  generate_tasks_json
+fi
+
+# ── Ensure injected files are git-ignored in cloned repos ────────────────────
+ensure_gitignore() {
+  if [[ -z "${GIT_REPO_URL:-}" ]]; then
+    return
+  fi
+
+  local gitignore="$PROJECT_DIR/.gitignore"
+  local header="# Builder Workspace — auto-generated files"
+  local entries=(
+    "CLAUDE.md"
+    ".opencode/"
+    ".vscode/tasks.json"
+  )
+
+  # Create .gitignore if it doesn't exist
+  touch "$gitignore"
+
+  # Add comment header if not already present
+  if ! grep -qxF "$header" "$gitignore"; then
+    # Add a blank line separator if file is non-empty
+    if [[ -s "$gitignore" ]]; then
+      echo "" >> "$gitignore"
+    fi
+    echo "$header" >> "$gitignore"
+  fi
+
+  # Add each entry if not already present
+  for entry in "${entries[@]}"; do
+    if ! grep -qxF "$entry" "$gitignore"; then
+      echo "$entry" >> "$gitignore"
+    fi
+  done
+}
+
+ensure_gitignore
 
 # ── Start code-server ────────────────────────────────────────────────────────
 echo "Starting Builder Workspace..."

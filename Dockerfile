@@ -24,6 +24,19 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# Ruby + Bundler (for Rails projects)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ruby ruby-dev build-essential \
+    && gem install bundler --no-document \
+    && rm -rf /var/lib/apt/lists/*
+
+# Go 1.24
+ARG GO_VERSION=1.24.3
+RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz \
+    && tar -C /usr/local -xzf /tmp/go.tar.gz \
+    && rm /tmp/go.tar.gz
+ENV PATH="/usr/local/go/bin:/home/coder/go/bin:${PATH}"
+
 # GitHub CLI (pinned + checksum verified)
 ARG GH_VERSION=2.74.1
 ARG GH_SHA256=d62406233a42e0dc577dcead8d7bafabcc4c548d9c3a6da761c6709bc8f4b373
