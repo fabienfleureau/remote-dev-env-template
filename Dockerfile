@@ -156,12 +156,13 @@ RUN rtk init -g 2>/dev/null || true \
     && rtk init -g --opencode 2>/dev/null || true
 
 # ── Entrypoint: clone git repo (if configured), install deps, start code-server
+# Start as root so the entrypoint can fix /home/coder ownership when a volume
+# is mounted at /home (the entrypoint drops to the coder user after fixing).
 USER root
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chown -R coder:coder /home/coder
 
-USER coder
 WORKDIR /home/coder/project
 
 EXPOSE 8080

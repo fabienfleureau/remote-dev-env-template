@@ -15,6 +15,19 @@ set -e
 PROJECT_DIR="/home/coder/project"
 DEV_PORT="${DEV_PORT:-3100}"
 
+# ── Fix /home/coder ownership when a volume is mounted at /home ──────────────
+# Volume mounts override build-time ownership, leaving /home/coder owned by root.
+# We start as root, fix permissions, then re-exec as the coder user.
+if [[ "$(id -u)" -eq 0 ]]; then
+  mkdir -p /home/coder/.local/share/code-server/User \
+           /home/coder/.config/code-server \
+           /home/coder/.config/opencode \
+           /home/coder/project
+  chown -R coder:coder /home/coder
+  # Re-execute this script as coder, preserving all env vars (-p)
+  exec su -p -s /bin/bash coder -- "$0" "$@"
+fi
+
 # ── Clear stale workspace state to prevent webview deserialization crashes ────
 rm -rf /home/coder/.local/share/code-server/User/workspaceStorage/*/state.vscdb 2>/dev/null
 
