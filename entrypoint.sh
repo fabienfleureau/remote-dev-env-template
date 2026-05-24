@@ -13,6 +13,7 @@
 #   OPENCODE_PORT   — Port for the OpenCode web UI (default: 9100)
 #   DISABLE_CODE_SERVER — Set to "true" to skip code-server and serve an RDE welcome page instead
 #   OPENAI_API_KEY  — API key for Codex (OpenAI's AI coding agent)
+#   OPENCODE_DEFAULT_MODEL — Default model for OpenCode (e.g. anthropic/claude-sonnet-4-6)
 #   GIT_ROOT_PATH   — Subdirectory within the repo where the app lives (default: /).
 #                      Useful for monorepos where the app is not at the repo root.
 #   PRE_START_SCRIPT — Optional shell script to run before the main process starts.
@@ -169,6 +170,113 @@ generate_opencode_skill() {
 }
 
 generate_opencode_skill
+
+# ── Generate OpenCode provider configuration ─────────────────────────────────
+generate_opencode_config() {
+  local config_dir="/home/coder/.config/opencode"
+  local config_file="$config_dir/opencode.json"
+
+  # Skip if config already exists (user may have customized it)
+  if [[ -f "$config_file" ]]; then
+    echo "OpenCode config already exists, skipping generation."
+    return
+  fi
+
+  mkdir -p "$config_dir"
+
+  local model=""
+
+  # Priority 1: Explicit default model from blueprint settings
+  if [[ -n "${OPENCODE_DEFAULT_MODEL:-}" ]]; then
+    model="$OPENCODE_DEFAULT_MODEL"
+  # Priority 2: Derive from BLUEPRINT_AI_PROVIDERS JSON
+  elif [[ -n "${BLUEPRINT_AI_PROVIDERS:-}" ]] && echo "$BLUEPRINT_AI_PROVIDERS" | jq empty 2>/dev/null; then
+    # Find the first enabled provider with a model
+    local provider_name
+    local provider_model
+    provider_name=$(echo "$BLUEPRINT_AI_PROVIDERS" | jq -r '[.[] | select(.enabled == true and .model != "")] | .[0].provider // empty')
+    provider_model=$(echo "$BLUEPRINT_AI_PROVIDERS" | jq -r '[.[] | select(.enabled == true and .model != "")] | .[0].model // empty')
+    if [[ -n "$provider_name" && -n "$provider_model" ]]; then
+      if [[ "$provider_name" == "custom" ]]; then
+        # "custom-llm" is the provider ID used in opencode.json — must match the frontend
+        model="custom-llm/$provider_model"
+      else
+        model="$provider_name/$provider_model"
+      fi
+    fi
+  # Priority 3: Detect from individual env vars
+  elif [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    model="anthropic/claude-sonnet-4-6"
+  elif [[ -n "${OPENAI_API_KEY:-}" ]]; then
+    model="openai/gpt-4o"
+  fi
+
+  if [[ -z "$model" ]]; then
+    echo "No AI provider detected — skipping OpenCode config generation."
+    return
+  fi
+
+  # Check if custom provider needs configuration
+  local needs_custom=false
+  if [[ -n "${CUSTOM_LLM_API_KEY:-}" && -n "${CUSTOM_LLM_BASE_URL:-}" ]]; then
+    needs_custom=true
+  fi
+
+  # Extract the custom model name (part after the slash) for the models map
+  local custom_model_id=""
+  if [[ "$needs_custom" == "true" ]]; then
+    # Get model name from BLUEPRINT_AI_PROVIDERS if available
+    if [[ -n "${BLUEPRINT_AI_PROVIDERS:-}" ]]; then
+      custom_model_id=$(echo "$BLUEPRINT_AI_PROVIDERS" | jq -r '[.[] | select(.provider == "custom" and .enabled == true)] | .[0].model // empty')
+    fi
+    # Fallback: extract from the model string if it starts with custom-llm/
+    if [[ -z "$custom_model_id" && "$model" == custom-llm/* ]]; then
+      custom_model_id="${model#custom-llm/}"
+    fi
+  fi
+
+  # Build the config JSON
+  if [[ "$needs_custom" == "true" && -n "$custom_model_id" ]]; then
+    jq -n \
+      --arg schema "https://opencode.ai/config.json" \
+      --arg model "$model" \
+      --arg baseURL "$CUSTOM_LLM_BASE_URL" \
+      --arg modelId "$custom_model_id" \
+      '{
+        "$schema": $schema,
+        "model": $model,
+        "autoupdate": false,
+        "provider": {
+          "custom-llm": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Custom LLM",
+            "options": {
+              "baseURL": $baseURL,
+              "apiKey": "{env:CUSTOM_LLM_API_KEY}"
+            },
+            "models": {
+              ($modelId): {
+                "name": $modelId
+              }
+            }
+          }
+        }
+      }' > "$config_file"
+  else
+    jq -n \
+      --arg schema "https://opencode.ai/config.json" \
+      --arg model "$model" \
+      '{
+        "$schema": $schema,
+        "model": $model,
+        "autoupdate": false
+      }' > "$config_file"
+  fi
+
+  echo "Generated OpenCode config: model=$model (config: $config_file)"
+}
+
+generate_opencode_config
 
 # ── Execute optional PRE_START_SCRIPT ─────────────────────────────────────────
 # Runs inline (synchronously) so setup commands complete before the entrypoint
