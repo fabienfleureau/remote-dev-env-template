@@ -67,6 +67,13 @@ RUN mkdir -p /etc/zellij \
     && printf 'simplified_ui true\npane_frames false\ndefault_layout "compact"\ndefault_shell "/bin/bash"\nshow_release_notes false\nshow_startup_tips false\n' \
        > /etc/zellij/config.kdl
 
+# ttyd — web-based terminal server for iframe embedding
+ARG TTYD_VERSION=1.7.7
+ARG TTYD_SHA256=8a217c968aba172e0dbf3f34447218dc015bc4d5e59bf51db2f2cd12b7be4f55
+RUN curl -fsSL "https://github.com/tsl0922/ttyd/releases/download/${TTYD_VERSION}/ttyd.x86_64" -o /usr/local/bin/ttyd \
+    && echo "${TTYD_SHA256}  /usr/local/bin/ttyd" | sha256sum -c - \
+    && chmod +x /usr/local/bin/ttyd
+
 # Qovery CLI
 RUN curl -s https://get.qovery.com | bash
 
