@@ -64,7 +64,7 @@ RUN cd /tmp \
 # default_shell ensures all Zellij panes use bash regardless of $SHELL env var
 ENV ZELLIJ_CONFIG_FILE=/etc/zellij/config.kdl
 RUN mkdir -p /etc/zellij \
-    && printf 'simplified_ui true\npane_frames false\ndefault_layout "compact"\ndefault_shell "/bin/bash"\nshow_release_notes false\nshow_startup_tips false\n' \
+    && printf 'simplified_ui true\npane_frames false\ndefault_layout "compact"\ndefault_shell "/bin/bash"\nshow_release_notes false\nshow_startup_tips false\nmouse_mode false\ncopy_on_select true\ncopy_clipboard "system"\n' \
        > /etc/zellij/config.kdl
 
 # ttyd — web-based terminal server for iframe embedding
