@@ -63,17 +63,21 @@ fi
 # ── Clear stale workspace state to prevent webview deserialization crashes ────
 rm -rf /home/coder/.local/share/code-server/User/workspaceStorage/*/state.vscdb 2>/dev/null
 
-# ── Handle HTTP_PROXY during startup ─────────────────────────────────────────
+# ── Handle HTTP_PROXY and cert env vars during startup ───────────────────────
 # When Agent Access Governance (AAG) is enabled, the Qovery environment has
-# HTTP_PROXY/HTTPS_PROXY pointing to a proxy process on localhost:8877. That
-# proxy is bootstrapped by the BFF portal via execInPod() AFTER the container
-# starts — so it's not running yet when entrypoint.sh executes. Temporarily
-# unset the proxy vars for startup operations (git clone, npm install, etc.)
-# and restore them before launching the main process, so the proxy (once
-# bootstrapped by the BFF) will be used by tools like Claude Code and Codex.
+# HTTP_PROXY/HTTPS_PROXY pointing to a proxy process on localhost:8877 and
+# NODE_EXTRA_CA_CERTS/SSL_CERT_FILE/REQUESTS_CA_BUNDLE pointing to
+# /opt/rde/ca.crt. Both the proxy process and the cert file are written by
+# the BFF portal via execInPod() AFTER the container starts — so neither
+# exists when entrypoint.sh executes. Temporarily unset all of these for
+# startup operations (git clone, npm install, etc.) and restore them before
+# launching the main process.
 _ORIG_HTTP_PROXY="${HTTP_PROXY:-}"
 _ORIG_HTTPS_PROXY="${HTTPS_PROXY:-}"
 _ORIG_NO_PROXY="${NO_PROXY:-}"
+_ORIG_NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-}"
+_ORIG_SSL_CERT_FILE="${SSL_CERT_FILE:-}"
+_ORIG_REQUESTS_CA_BUNDLE="${REQUESTS_CA_BUNDLE:-}"
 if [[ -n "$HTTP_PROXY" ]]; then
   # Quick connectivity check — if the proxy is already running (container
   # restart where the proxy survived), keep the vars. Otherwise unset them
@@ -81,6 +85,11 @@ if [[ -n "$HTTP_PROXY" ]]; then
   if ! node -e "const n=require('net');const s=n.createConnection(8877,'127.0.0.1');s.once('connect',()=>{process.exit(0)});s.once('error',()=>process.exit(1));setTimeout(()=>process.exit(1),1000)" 2>/dev/null; then
     echo "[entrypoint] HTTP_PROXY is set (localhost:8877) but proxy is not running yet — unsetting for startup"
     unset HTTP_PROXY HTTPS_PROXY NO_PROXY
+    # Also unset cert vars — the cert file (/opt/rde/ca.crt) is written by
+    # the same bootstrap that starts the proxy. If the proxy isn't running,
+    # the cert file doesn't exist either, and NODE_EXTRA_CA_CERTS pointing
+    # at a missing file causes OpenSSL warnings in every Node.js process.
+    unset NODE_EXTRA_CA_CERTS SSL_CERT_FILE REQUESTS_CA_BUNDLE
   fi
 fi
 
@@ -642,7 +651,19 @@ if [[ -n "$_ORIG_HTTP_PROXY" ]]; then
   export HTTP_PROXY="$_ORIG_HTTP_PROXY"
   export HTTPS_PROXY="$_ORIG_HTTPS_PROXY"
   export NO_PROXY="$_ORIG_NO_PROXY"
-  echo "[entrypoint] Restored HTTP_PROXY/HTTPS_PROXY for main process"
+  # Only restore cert env vars if the cert file actually exists on disk.
+  # The proxy bootstrap (execInPod from the BFF) writes /opt/rde/ca.crt
+  # at the same time it starts the proxy. If the file isn't there yet,
+  # setting NODE_EXTRA_CA_CERTS causes OpenSSL warnings in every Node.js
+  # process and may break tools that hard-fail on invalid cert paths.
+  if [[ -f "/opt/rde/ca.crt" ]]; then
+    export NODE_EXTRA_CA_CERTS="$_ORIG_NODE_EXTRA_CA_CERTS"
+    export SSL_CERT_FILE="$_ORIG_SSL_CERT_FILE"
+    export REQUESTS_CA_BUNDLE="$_ORIG_REQUESTS_CA_BUNDLE"
+    echo "[entrypoint] Restored HTTP_PROXY/HTTPS_PROXY + cert vars for main process"
+  else
+    echo "[entrypoint] Restored HTTP_PROXY/HTTPS_PROXY for main process (cert file not yet available)"
+  fi
 fi
 
 # ── Start code-server (or RDE welcome page in headless mode) ─────────────────
