@@ -24,7 +24,19 @@
 #   RDE_USER_PROFILE — JSON user profile (code_comfort, preferred_language, role_title, timezone)
 set -e
 
-PROJECT_DIR="/home/coder/project"
+# ── Load user configuration from install.sh (or env var, or default) ─────────
+if [[ -f /etc/rde/env ]]; then
+  # shellcheck disable=SC1091
+  source /etc/rde/env
+fi
+RDE_USER="${RDE_USER:-coder}"
+if id -u "$RDE_USER" &>/dev/null; then
+  RDE_HOME=$(eval echo "~$RDE_USER")
+else
+  RDE_HOME="/home/$RDE_USER"
+fi
+
+PROJECT_DIR="${RDE_HOME}/project"
 DEV_PORT="${DEV_PORT:-3100}"
 OPENCODE_PORT="${OPENCODE_PORT:-9100}"
 GIT_ROOT_PATH="${GIT_ROOT_PATH:-/}"
@@ -38,30 +50,30 @@ else
   APP_DIR="$PROJECT_DIR"
 fi
 
-# ── Fix /home/coder ownership when a volume is mounted at /home ──────────────
-# Volume mounts override build-time ownership, leaving /home/coder owned by root.
-# We start as root, fix permissions, then re-exec as the coder user.
+# ── Fix workspace user ownership when a volume is mounted at /home ───────────
+# Volume mounts override build-time ownership, leaving $RDE_HOME owned by root.
+# We start as root, fix permissions, then re-exec as the workspace user.
 if [[ "$(id -u)" -eq 0 ]]; then
-  mkdir -p /home/coder/.local/share/code-server/User \
-           /home/coder/.config/code-server \
-           /home/coder/.config/opencode \
-           /home/coder/project
+  mkdir -p "${RDE_HOME}/.local/share/code-server/User" \
+           "${RDE_HOME}/.config/code-server" \
+           "${RDE_HOME}/.config/opencode" \
+           "${RDE_HOME}/project"
 
   # Regenerate code-server config if wiped by volume mount (no auth — Qovery handles access control)
-  if [[ ! -f /home/coder/.config/code-server/config.yaml ]]; then
+  if [[ ! -f "${RDE_HOME}/.config/code-server/config.yaml" ]]; then
     printf 'bind-addr: 0.0.0.0:8080\nauth: none\ncert: false\napp-name: Builder Workspace\n' \
-      > /home/coder/.config/code-server/config.yaml
+      > "${RDE_HOME}/.config/code-server/config.yaml"
   fi
 
-  chown -R coder:coder /home/coder
-  # Re-execute this script as coder, preserving all env vars (-p)
+  chown -R "${RDE_USER}:${RDE_USER}" "$RDE_HOME"
+  # Re-execute this script as workspace user, preserving all env vars (-p)
   # Set HOME explicitly — su -p preserves the root HOME otherwise
-  export HOME=/home/coder
-  exec su -p -s /bin/bash coder -- "$0" "$@"
+  export HOME="$RDE_HOME"
+  exec su -p -s /bin/bash "$RDE_USER" -- "$0" "$@"
 fi
 
 # ── Clear stale workspace state to prevent webview deserialization crashes ────
-rm -rf /home/coder/.local/share/code-server/User/workspaceStorage/*/state.vscdb 2>/dev/null
+rm -rf "${RDE_HOME}/.local/share/code-server/User/workspaceStorage"/*/state.vscdb 2>/dev/null
 
 # ── Handle HTTP_PROXY and cert env vars during startup ───────────────────────
 # When Agent Access Governance (AAG) is enabled, the Qovery environment has
@@ -288,7 +300,7 @@ generate_agents_md
 
 # ── Generate OpenCode provider configuration ─────────────────────────────────
 generate_opencode_config() {
-  local config_dir="/home/coder/.config/opencode"
+  local config_dir="${RDE_HOME}/.config/opencode"
   local config_file="$config_dir/opencode.json"
 
   # Skip if config already exists (user may have customized it)
