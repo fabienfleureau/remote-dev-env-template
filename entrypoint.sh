@@ -137,6 +137,14 @@ if [[ -n "${GIT_REPO_URL:-}" ]]; then
   BRANCH="${GIT_BRANCH:-main}"
 
   if [[ ! -d "$PROJECT_DIR/.git" ]]; then
+    # Clean leftover files from a previous failed clone attempt.
+    # Files like AGENTS.md, CLAUDE.md, .opencode/ written after a failed clone
+    # persist on the volume and prevent future clones ("destination path already
+    # exists and is not an empty directory").
+    if [ "$(ls -A "$PROJECT_DIR" 2>/dev/null)" ]; then
+      echo "Project directory is not empty but has no .git — cleaning for fresh clone..."
+      find "$PROJECT_DIR" -mindepth 1 -delete
+    fi
     # First start — clone the repo
     echo "Cloning $GIT_REPO_URL (branch: $BRANCH)..."
     if git clone --branch "$BRANCH" --single-branch "$GIT_REPO_URL" "$PROJECT_DIR" 2>&1; then
