@@ -17,7 +17,34 @@ Browser
   +--[Port 9100] OpenCode web UI (alternative AI coding interface)
   |
   +--[Port 3100] Auto-started dev server (Vite, Next.js, Django, Rails, Go, etc.)
+  |
+  +--[Port 22]   SSH server (remote IDE: VS Code Remote SSH, JetBrains Gateway)
 ```
+
+## Remote IDE Connection (VS Code Desktop / IntelliJ)
+
+The container runs an SSH server on port 22, enabling native remote dev from your desktop IDE. Set the `SSH_PUBLIC_KEY` environment variable to your public key (e.g. the contents of `~/.ssh/id_ed25519.pub`) before starting the container.
+
+### VS Code Remote SSH
+
+1. Install the **Remote - SSH** extension (`ms-vscode-remote.remote-ssh`).
+2. Add an entry to `~/.ssh/config`:
+   ```
+   Host my-rde
+     HostName <container-host>
+     Port 22
+     User coder
+     IdentityFile ~/.ssh/id_ed25519
+   ```
+3. Open the Command Palette → **Remote-SSH: Connect to Host** → select `my-rde`.
+4. VS Code downloads its server component to the container and opens your workspace.
+
+### JetBrains Gateway (IntelliJ, GoLand, PyCharm, …)
+
+1. Download and install [JetBrains Gateway](https://www.jetbrains.com/remote-development/gateway/).
+2. Open Gateway → **SSH Connection** → enter the host, port, and username (`coder`).
+3. Select the IDE and project path (`~/project`). Gateway downloads the IDE backend to the container automatically (~3–5 GB on first connect).
+4. The full IDE opens locally while all computation runs in the container.
 
 ## What's Included
 
@@ -126,6 +153,7 @@ This template is designed to be used as a **blueprint** in the [Qovery RDE Porta
 | `ANTHROPIC_API_KEY` | API key for Claude Code | -- |
 | `OPENAI_API_KEY` | API key for Codex | -- |
 | `PRE_START_SCRIPT` | Shell script to run before the main process starts (runs inline; use `&` for long-running commands) | -- |
+| `SSH_PUBLIC_KEY` | SSH public key for remote IDE connections (VS Code Remote SSH, JetBrains Gateway). Content of `~/.ssh/id_*.pub`. No SSH login is possible without this. | -- |
 
 ## How It Works
 
@@ -188,6 +216,7 @@ The default stack for new projects is **Vite + React + Tailwind CSS** (configure
 | 8080 | code-server (VS Code) or RDE welcome page |
 | 9100 | OpenCode web UI |
 | 3100 | Dev server (configurable via `DEV_PORT`) |
+| 22   | SSH server (VS Code Remote SSH, JetBrains Gateway) |
 
 ## Learn More
 

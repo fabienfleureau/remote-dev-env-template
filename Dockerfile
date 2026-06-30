@@ -31,8 +31,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     nodejs \
     # Search & navigation
     ripgrep fzf \
+    # SSH server for remote IDE connections (VS Code Remote SSH, JetBrains Gateway)
+    openssh-server \
     && gem install bundler --no-document \
     && rm -rf /var/lib/apt/lists/*
+
+# SSH server — key-based auth only; password and root login disabled
+RUN mkdir -p /run/sshd \
+    && sed -i \
+         -e 's/#PasswordAuthentication yes/PasswordAuthentication no/' \
+         -e 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' \
+         /etc/ssh/sshd_config \
+    && echo 'PermitRootLogin no' >> /etc/ssh/sshd_config \
+    && echo 'ChallengeResponseAuthentication no' >> /etc/ssh/sshd_config
 
 # Go 1.24
 ARG GO_VERSION=1.24.3
@@ -199,6 +210,6 @@ RUN mkdir -p /etc/rde && printf 'RDE_USER="%s"\nRDE_HOME="/home/%s"\n' "${RDE_US
 
 WORKDIR /home/${RDE_USER}/project
 
-EXPOSE 8080 9100
+EXPOSE 8080 9100 22
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -65,6 +65,19 @@ if [[ "$(id -u)" -eq 0 ]]; then
       > "${RDE_HOME}/.config/code-server/config.yaml"
   fi
 
+  # ── SSH key setup and daemon start ──────────────────────────────────────────
+  # sshd must bind port 22 as root; do this before re-exec as the workspace user.
+  if [[ -n "${SSH_PUBLIC_KEY:-}" ]]; then
+    mkdir -p "${RDE_HOME}/.ssh"
+    printf '%s\n' "$SSH_PUBLIC_KEY" >> "${RDE_HOME}/.ssh/authorized_keys"
+    chmod 700 "${RDE_HOME}/.ssh"
+    chmod 600 "${RDE_HOME}/.ssh/authorized_keys"
+    chown -R "${RDE_USER}:${RDE_USER}" "${RDE_HOME}/.ssh"
+    echo "[entrypoint] SSH public key installed for ${RDE_USER}"
+  fi
+  /usr/sbin/sshd
+  echo "[entrypoint] SSH server started (port 22)"
+
   chown -R "${RDE_USER}:${RDE_USER}" "$RDE_HOME"
   # Re-execute this script as workspace user, preserving all env vars (-p)
   # Set HOME explicitly — su -p preserves the root HOME otherwise
