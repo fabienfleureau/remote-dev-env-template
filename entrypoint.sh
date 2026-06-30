@@ -75,6 +75,8 @@ if [[ "$(id -u)" -eq 0 ]]; then
     chown -R "${RDE_USER}:${RDE_USER}" "${RDE_HOME}/.ssh"
     echo "[entrypoint] SSH public key installed for ${RDE_USER}"
   fi
+  # /run is a tmpfs in many container runtimes; recreate the privsep dir at runtime.
+  mkdir -p /run/sshd
   /usr/sbin/sshd
   echo "[entrypoint] SSH server started (port 22)"
 

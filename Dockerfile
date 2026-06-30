@@ -37,13 +37,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # SSH server — key-based auth only; password and root login disabled
-RUN mkdir -p /run/sshd \
-    && sed -i \
+# ssh-keygen -A generates any missing host keys (RSA, ECDSA, Ed25519).
+# The postinst script sometimes skips this in Docker builds.
+RUN sed -i \
          -e 's/#PasswordAuthentication yes/PasswordAuthentication no/' \
          -e 's/#PubkeyAuthentication yes/PubkeyAuthentication yes/' \
          /etc/ssh/sshd_config \
     && echo 'PermitRootLogin no' >> /etc/ssh/sshd_config \
-    && echo 'ChallengeResponseAuthentication no' >> /etc/ssh/sshd_config
+    && echo 'ChallengeResponseAuthentication no' >> /etc/ssh/sshd_config \
+    && ssh-keygen -A
 
 # Go 1.24
 ARG GO_VERSION=1.24.3
