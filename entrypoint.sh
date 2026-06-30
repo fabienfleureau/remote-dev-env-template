@@ -67,14 +67,28 @@ if [[ "$(id -u)" -eq 0 ]]; then
 
   # ── SSH key setup and daemon start ──────────────────────────────────────────
   # sshd must bind port 22 as root; do this before re-exec as the workspace user.
-  if [[ -n "${SSH_PUBLIC_KEY:-}" ]]; then
-    mkdir -p "${RDE_HOME}/.ssh"
-    printf '%s\n' "$SSH_PUBLIC_KEY" >> "${RDE_HOME}/.ssh/authorized_keys"
-    chmod 700 "${RDE_HOME}/.ssh"
-    chmod 600 "${RDE_HOME}/.ssh/authorized_keys"
-    chown -R "${RDE_USER}:${RDE_USER}" "${RDE_HOME}/.ssh"
-    echo "[entrypoint] SSH public key installed for ${RDE_USER}"
+  mkdir -p "${RDE_HOME}/.ssh"
+
+  # Generate a unique ed25519 key pair on first boot (skipped on restart if volume persists the key).
+  # Generating here — not at build time — ensures each container instance has its own private key
+  # that is never baked into a shared image layer.
+  if [[ ! -f "${RDE_HOME}/.ssh/id_ed25519" ]]; then
+    ssh-keygen -t ed25519 -f "${RDE_HOME}/.ssh/id_ed25519" -N "" -C "rde-workspace"
+    cat "${RDE_HOME}/.ssh/id_ed25519.pub" >> "${RDE_HOME}/.ssh/authorized_keys"
+    echo "[entrypoint] SSH key pair generated for ${RDE_USER}"
   fi
+
+  # Optional: add a caller-supplied public key (e.g. the user's own laptop key).
+  if [[ -n "${SSH_PUBLIC_KEY:-}" ]]; then
+    printf '%s\n' "$SSH_PUBLIC_KEY" >> "${RDE_HOME}/.ssh/authorized_keys"
+    echo "[entrypoint] SSH_PUBLIC_KEY added to authorized_keys"
+  fi
+
+  chmod 700 "${RDE_HOME}/.ssh"
+  chmod 600 "${RDE_HOME}/.ssh/authorized_keys" "${RDE_HOME}/.ssh/id_ed25519" 2>/dev/null || true
+  chmod 644 "${RDE_HOME}/.ssh/id_ed25519.pub" 2>/dev/null || true
+  chown -R "${RDE_USER}:${RDE_USER}" "${RDE_HOME}/.ssh"
+
   # /run is a tmpfs in many container runtimes; recreate the privsep dir at runtime.
   mkdir -p /run/sshd
   /usr/sbin/sshd
