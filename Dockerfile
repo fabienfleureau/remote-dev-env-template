@@ -185,6 +185,17 @@ RUN mkdir -p /home/${RDE_USER}/.local/share/code-server/User \
        '}' \
        > /home/${RDE_USER}/.local/share/code-server/User/settings.json
 
+# Generate an SSH key pair for the workspace user.
+# The private key (~/.ssh/id_ed25519) is retrievable via code-server or the terminal.
+# Copy it to your local machine to connect via VS Code Remote SSH or JetBrains Gateway.
+# SSH_PUBLIC_KEY env var can still add extra authorized keys at container start.
+RUN mkdir -p /home/${RDE_USER}/.ssh \
+    && ssh-keygen -t ed25519 -f /home/${RDE_USER}/.ssh/id_ed25519 -N "" -C "rde-workspace" \
+    && cat /home/${RDE_USER}/.ssh/id_ed25519.pub >> /home/${RDE_USER}/.ssh/authorized_keys \
+    && chmod 700 /home/${RDE_USER}/.ssh \
+    && chmod 600 /home/${RDE_USER}/.ssh/authorized_keys /home/${RDE_USER}/.ssh/id_ed25519 \
+    && chmod 644 /home/${RDE_USER}/.ssh/id_ed25519.pub
+
 # ── Switch to workspace user for all user-space installations ──────────────
 # Fix ownership: steps above created dirs under /home/${RDE_USER} as root
 RUN chown -R ${RDE_USER}:${RDE_USER} /home/${RDE_USER}
